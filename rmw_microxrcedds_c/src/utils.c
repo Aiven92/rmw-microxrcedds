@@ -235,7 +235,7 @@ int build_topic_xml(
     "</dds>";
 
   int ret = 0;
-  static char type_name_buffer[50];
+  static char type_name_buffer[RMW_TOPIC_NAME_MAX_NAME_LENGTH];
 
   if (RMW_TOPIC_NAME_MAX_NAME_LENGTH >= strlen(topic_name) &&
     generate_type_name(members, "msg", type_name_buffer, sizeof(type_name_buffer)))
@@ -269,7 +269,7 @@ int build_xml(
   const rmw_qos_profile_t * qos_policies, char xml[], size_t buffer_size)
 {
   int ret = 0;
-  static char type_name_buffer[50];
+  static char type_name_buffer[RMW_TOPIC_NAME_MAX_NAME_LENGTH];
 
   if (generate_type_name(members, "msg", type_name_buffer, sizeof(type_name_buffer))) {
     char full_topic_name[RMW_TOPIC_NAME_MAX_NAME_LENGTH + 1 + sizeof(ros_topic_prefix)];
