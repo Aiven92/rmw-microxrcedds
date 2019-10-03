@@ -40,6 +40,7 @@ rmw_publisher_t * create_publisher(
     RMW_SET_ERROR_MSG("failed to allocate memory");
     goto create_publisher_end;
   }
+  memcpy(rmw_publisher->topic_name,topic_name,strlen(topic_name));
 
   CustomNode * custom_node = (CustomNode *)node->data;
   struct Item * memory_node = get_memory(&custom_node->publisher_mem);

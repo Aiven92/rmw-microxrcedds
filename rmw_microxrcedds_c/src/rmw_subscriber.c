@@ -41,6 +41,7 @@ rmw_subscription_t * create_subscriber(
     RMW_SET_ERROR_MSG("failed to allocate memory");
     goto create_subscriber_end;
   }
+  memcpy(rmw_subscriber->topic_name,topic_name,strlen(topic_name));
 
   CustomNode * custom_node = (CustomNode *)node->data;
   struct Item * memory_node = get_memory(&custom_node->subscription_mem);
