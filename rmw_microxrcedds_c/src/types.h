@@ -77,6 +77,18 @@ typedef struct CustomPublisher
   struct CustomNode * owner_node;
 } CustomPublisher;
 
+typedef struct CustomServiceInfo
+{
+  const message_type_support_callbacks_t * request_type_support_;
+  const message_type_support_callbacks_t * response_type_support_;
+  rmw_subscription_t * request_subscriber_;
+  rmw_publisher_t * response_publisher_;
+  // ServiceListener * listener_;
+  uxrObjectId * participant_;
+  const char * typesupport_identifier_;
+  struct CustomNode * owner_node;
+} CustomServiceInfo;
+
 typedef struct CustomNode
 {
   struct Item mem;
