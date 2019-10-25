@@ -18,6 +18,8 @@
 
 #include <uxr/client/client.h>
 #include <rosidl_typesupport_microxrcedds_shared/identifier.h>
+#include <rosidl_typesupport_microxrcedds_shared/message_type_support.h>
+#include <rosidl_typesupport_microxrcedds_shared/service_type_support.h>
 
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
@@ -247,8 +249,95 @@ rmw_service_t * rmw_create_service(
 {
   EPROS_PRINT_TRACE()
 
+  if (!node) {
+    RMW_SET_ERROR_MSG("node handle is null");
+    return NULL;
+  }
+
+  if (node->implementation_identifier != eprosima_microxrcedds_identifier) {
+    RMW_SET_ERROR_MSG("node handle not from this implementation");
+    return NULL;
+  }
+
+  if (!service_name || strlen(service_name) == 0) {
+    RMW_SET_ERROR_MSG("service topic is null or empty string");
+    return NULL;
+  }
+
+  if (!qos_policies) {
+    RMW_SET_ERROR_MSG("qos_profile is null");
+    return NULL;
+  }
+
+  const CustomNode * node_info = (CustomNode *) (node->data);
+  if (!node_info) {
+    RMW_SET_ERROR_MSG("node impl is null");
+    return NULL;
+  }
+
+  uxrObjectId participant = node_info->participant_id;
+  // Do I have to check it?
+  // if (participant) {
+  //   RMW_SET_ERROR_MSG("participant handle is null");
+  //   return NULL;
+  // }
+
+  const rosidl_service_type_support_t * ts = get_service_typesupport_handle(
+    type_support, ROSIDL_TYPESUPPORT_MICROXRCEDDS_C__IDENTIFIER_VALUE);
+  if (!type_support) {
+      RMW_SET_ERROR_MSG("type support not from this implementation");
+      return NULL;
+  }
+
+  CustomServiceInfo * service_info = (CustomServiceInfo *)rmw_allocate(sizeof(CustomServiceInfo));
+  service_info->owner_node = node_info;
+  service_info->participant_ = &participant;
+
+
+  service_info->typesupport_identifier_ = rmw_allocate(strlen(type_support->typesupport_identifier) + 1);
+  memcpy(service_info->typesupport_identifier_, type_support->typesupport_identifier, strlen(type_support->typesupport_identifier) + 1);
+
+  service_type_support_callbacks_t * service_members;
+  message_type_support_callbacks_t * request_members;
+  message_type_support_callbacks_t * response_members;
+
+  service_members = (service_type_support_callbacks_t *) ts->data;
+  request_members = (message_type_support_callbacks_t *) service_members->request_members_()->data;
+  response_members = (message_type_support_callbacks_t *) service_members->response_members_()->data;
+
+  // In rwm_fastrtps it does Domain::getRegisteredType
+  service_info->request_type_support_ = request_members;
+  service_info->response_type_support_ = response_members;
+
+  const char * const ros_topic_prefix = "rt";
+  const char * const ros_service_requester_prefix = "rq";
+  const char * const ros_service_response_prefix = "rr";
+
+  rmw_qos_profile_t * qos = qos_policies;
+  qos->avoid_ros_namespace_conventions = true;
+  
+  static char publisher_topic_name[70];
+  strcpy(publisher_topic_name,ros_service_response_prefix);
+  strcat(publisher_topic_name,service_name);
+  strcat(publisher_topic_name,"Reply");
+  rmw_publisher_t * publisher = create_publisher(node,service_members->response_members_(),publisher_topic_name,qos_policies);
+  service_info->response_publisher_ = publisher;
+
+  static char subcriber_topic_name[70];
+  strcpy(subcriber_topic_name,ros_service_requester_prefix);
+  strcat(subcriber_topic_name,service_name);
+  strcat(subcriber_topic_name,"Request");  
+  rmw_subscription_t * subcriber = create_subscriber(node,service_members->request_members_(),subcriber_topic_name,qos_policies,false);
+  service_info->request_subscriber_ = subcriber;
+
   rmw_service_t * rmw_service = (rmw_service_t *)rmw_allocate(
     sizeof(rmw_service_t));
+
+  rmw_service->implementation_identifier = eprosima_microxrcedds_identifier;
+  rmw_service->data = service_info;
+  rmw_service->service_name = rmw_allocate(strlen(service_name) + 1);
+  memcpy(rmw_service->service_name, service_name, strlen(service_name) + 1);
+
   return rmw_service;
 }
 
@@ -267,16 +356,20 @@ rmw_ret_t rmw_take_request(
   const rmw_service_t * service, rmw_request_id_t * request_header, void * ros_request,
   bool * taken)
 {
-  EPROS_PRINT_TRACE()
-  return RMW_RET_OK;
+  CustomServiceInfo * info = service->data;
+  rmw_subscription_t * request_subscriber = info->request_subscriber_;
+
+  return rmw_take(request_subscriber,ros_request,taken);
 }
 
 rmw_ret_t rmw_send_response(
   const rmw_service_t * service, rmw_request_id_t * request_header,
   void * ros_response)
 {
-  EPROS_PRINT_TRACE()
-  return RMW_RET_OK;
+  CustomServiceInfo * info = service->data;
+  rmw_publisher_t  * response_publisher = info->response_publisher_;
+
+  return rmw_publish(response_publisher,ros_response);
 }
 
 rmw_guard_condition_t * rmw_create_guard_condition(rmw_context_t * context)
@@ -334,6 +427,7 @@ rmw_ret_t rmw_wait(
 
   // for Subscription requests and response
   uint16_t subscription_request[MAX_SUBSCRIPTIONS_X_NODE];
+  uint8_t subscription_request_index = 0;
   uint8_t subscription_status_request[MAX_SUBSCRIPTIONS_X_NODE];
 
   // Go throw all subscriptions
@@ -356,21 +450,36 @@ rmw_ret_t rmw_wait(
               NULL);
         }
 
-
         // Reset the request id
-        subscription_request[i] = custom_subscription->subscription_request;
+        subscription_request[subscription_request_index++] = custom_subscription->subscription_request;
       }
     }
   }
 
+  //Why else if?
   // Go throw all services
-  /*
   else if ((services != NULL) && (services->service_count > 0))
   {
       // Extract first session pointer
-      //services->services[0];
+      for (size_t i = 0; i < services->service_count; ++i) {
+      if (services->services[i] != NULL) {
+        CustomServiceInfo * service_info = (CustomServiceInfo *)services->services[i];
+        CustomSubscription * custom_subscription = (CustomSubscription *)service_info->request_subscriber_->data;
+        custom_node = service_info->owner_node;
+
+        if (custom_subscription->waiting_for_response == false) {
+          custom_subscription->waiting_for_response = true;
+          custom_subscription->subscription_request = uxr_buffer_request_data(&custom_node->session,
+              custom_node->reliable_output, custom_subscription->datareader_id,
+              custom_node->reliable_input,
+              NULL);
+        }
+
+        // Reset the request id
+        subscription_request[subscription_request_index++] = custom_subscription->subscription_request;
+      }
+    }
   }
-  */
 
   // Go throw all clients
   /*
@@ -433,9 +542,9 @@ rmw_ret_t rmw_wait(
   }
 
   // read until status or timeout
-  if (subscriptions->subscriber_count > 0) {
+  if (subscriptions->subscriber_count > 0 || services->service_count > 0) {
     uxr_run_session_until_one_status(&custom_node->session, timeout, subscription_request,
-      subscription_status_request, subscriptions->subscriber_count);
+      subscription_status_request, subscriptions->subscriber_count + services->service_count);
   }
 
 
@@ -455,7 +564,14 @@ rmw_ret_t rmw_wait(
   }
   if (services != NULL) {
     for (size_t i = 0; i < services->service_count; ++i) {
-      services->services[i] = NULL;
+      // Check if there are any data
+      CustomServiceInfo * service_info = (CustomServiceInfo *)services->services[i];
+      CustomSubscription * custom_subscription = (CustomSubscription *) service_info->request_subscriber_->data;
+      if (custom_subscription->waiting_for_response) {
+        services->services[i] = NULL;
+      } else {
+        is_timeout = false;
+      } 
     }
   }
   if (clients != NULL) {
