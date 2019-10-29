@@ -27,6 +27,17 @@
 #include "./memory.h"
 #include "./config.h"
 
+typedef struct  rmw_context_impl_t
+{
+  #ifdef MICRO_XRCEDDS_SERIAL
+    char serial_device[50];
+  #elif defined(MICRO_XRCEDDS_UDP)
+    char agent_address[16];
+    uint16_t agent_port;
+  #endif
+
+} rmw_context_impl_t;
+
 typedef struct custom_topic_t
 {
   struct custom_topic_t * next_custom_topic;
@@ -108,6 +119,8 @@ typedef struct CustomNode
 
   uint16_t id_gen;
 } CustomNode;
+
+
 
 void init_nodes_memory(struct MemPool * memory, CustomNode nodes[MAX_NODES], size_t size);
 
