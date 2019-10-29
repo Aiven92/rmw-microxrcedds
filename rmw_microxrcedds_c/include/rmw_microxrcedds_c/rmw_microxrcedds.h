@@ -21,6 +21,17 @@
 #include "rmw/names_and_types.h"
 #include "rmw/rmw.h"
 
+typedef struct  rmw_init_options_impl_t
+{
+  // #ifdef MICRO_XRCEDDS_SERIAL
+    char serial_device[50];
+  // #elif defined(MICRO_XRCEDDS_UDP)
+    char agent_address[16];
+    uint16_t agent_port;
+  // #endif
+
+} rmw_init_options_impl_t;
+
 const char * rmw_get_implementation_identifier(void);
 
 rmw_node_t * rmw_create_node(
