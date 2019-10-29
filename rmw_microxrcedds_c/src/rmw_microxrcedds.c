@@ -56,7 +56,7 @@ rmw_node_t * rmw_create_node(
   } else if (!security_options) {
     RMW_SET_ERROR_MSG("security_options is null");
   } else {
-    rmw_node = create_node(name, namespace, domain_id);
+    rmw_node = create_node(name, namespace, domain_id, context);
   }
   return rmw_node;
 }
